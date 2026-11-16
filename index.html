@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>TikTok Dance Arena - Overlay</title>
+<style>
+  :root { --pink:#ff2d95; --cyan:#27f3ff; --purple:#7a2cff; --panel:rgba(12,6,32,.72); }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:1080px; height:1920px; background:transparent; overflow:hidden;
+    font-family:"Segoe UI", Arial, sans-serif; color:#fff; }
+
+  /* Margens seguras aproximadas da interface do TikTok: topo ~170px, direita ~160px, fundo ~430px */
+  .header { position:absolute; top:170px; left:48px; right:160px; display:flex; align-items:center; gap:20px; }
+  .title { font-size:56px; font-weight:900; letter-spacing:2px; line-height:1;
+    background:linear-gradient(90deg,var(--cyan),var(--pink)); -webkit-background-clip:text; background-clip:text;
+    color:transparent; filter:drop-shadow(0 0 14px rgba(122,44,255,.8)); }
+  .live { display:flex; align-items:center; gap:10px; padding:8px 18px; border-radius:999px;
+    background:var(--pink); font-weight:800; font-size:28px; letter-spacing:2px; box-shadow:0 0 18px var(--pink); }
+  .live i { width:14px; height:14px; border-radius:50%; background:#fff; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity:.25; transform:scale(.7); } }
+
+  .feed { position:absolute; top:290px; left:48px; width:640px; display:flex; flex-direction:column; gap:12px; }
+  .item { padding:14px 22px; border-radius:16px; background:var(--panel); border-left:8px solid var(--c, var(--cyan));
+    font-size:34px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    animation:slideIn .45s cubic-bezier(.2,.9,.3,1.2) both; }
+  .item b { color:var(--c, var(--cyan)); }
+  .item.out { animation:slideOut .4s ease-in both; }
+  @keyframes slideIn { from { transform:translateX(-120%); opacity:0; } to { transform:none; opacity:1; } }
+  @keyframes slideOut { to { transform:translateX(-120%); opacity:0; } }
+
+  .cta { position:absolute; left:48px; right:160px; bottom:440px; padding:26px 32px; border-radius:24px;
+    background:var(--panel); border:3px solid transparent;
+    background-image:linear-gradient(var(--panel),var(--panel)), linear-gradient(90deg,var(--cyan),var(--pink));
+    background-origin:border-box; background-clip:padding-box, border-box;
+    box-shadow:0 0 30px rgba(122,44,255,.5); text-align:center; }
+  .cta span { display:block; font-size:44px; font-weight:800; line-height:1.2; transition:opacity .4s, transform .4s; }
+  .cta span.hide { opacity:0; transform:translateY(10px); }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="title" id="title"></div>
+    <div class="live"><i></i>AO VIVO</div>
+  </div>
+  <div class="feed" id="feed"></div>
+  <div class="cta"><span id="tip"></span></div>
+
+<script>
+  // ===== CONFIG =====
+  const CONFIG = {
+    title: "TIKTOK DANCE ARENA",
+    tips: [
+      "💜 Segue para entrar na arena!",
+      "🎁 Manda um presente e a câmara foca em ti!",
+      "❤️ Toca no ecrã para dar likes à pista!",
+      "💬 Comenta o teu nome e dança com a gente!"
+    ],
+    tipInterval: 6000,
+    maxFeed: 4,
+    feedLife: 6000,
+    wsUrl: "" // ex.: "ws://localhost:8765" (ponte Node a enviar {"type":"Gift","name":"user"}); vazio = desativado
+  };
+
+  const TYPES = {
+    Join:   { icon: "👋", text: "entrou na arena",     color: "#27f3ff" },
+    Gift:   { icon: "🎁", text: "enviou um presente",  color: "#ff2d95" },
+    Follow: { icon: "💜", text: "começou a seguir",    color: "#b36bff" },
+    Like:   { icon: "❤️", text: "mandou likes",        color: "#ff5c7a" },
+    Winner: { icon: "🏆", text: "é o vencedor!",       color: "#ffd24a" }
+  };
+
+  // ===== TÍTULO E DICAS =====
+  document.getElementById("title").textContent = CONFIG.title;
+  const tipEl = document.getElementById("tip");
+  let tipIndex = 0;
+  tipEl.textContent = CONFIG.tips[0];
+  setInterval(() => {
+    tipEl.classList.add("hide");
+    setTimeout(() => {
+      tipIndex = (tipIndex + 1) % CONFIG.tips.length;
+      tipEl.textContent = CONFIG.tips[tipIndex];
+      tipEl.classList.remove("hide");
+    }, 400);
+  }, CONFIG.tipInterval);
+
+  // ===== FEED DE EVENTOS =====
+  const feed = document.getElementById("feed");
+
+  function removeItem(el) {
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 400);
+  }
+
+  function push(type, name) {
+    const def = TYPES[type];
+    if (!def || typeof name !== "string") return;
+    const el = document.createElement("div");
+    el.className = "item";
+    el.style.setProperty("--c", def.color);
+
+    const who = document.createElement("b");
+    who.textContent = name.slice(0, 24); // textContent: nomes de espectadores nunca viram HTML
+    el.append(def.icon + " ", who, " " + def.text);
+
+    feed.append(el);
+    while (feed.children.length > CONFIG.maxFeed) removeItem(feed.firstElementChild);
+    setTimeout(() => removeItem(el), CONFIG.feedLife);
+  }
+  window.TDA = { push };
+
+  // ===== LIGAÇÃO OPCIONAL À PONTE (WebSocket) =====
+  function connect() {
+    const ws = new WebSocket(CONFIG.wsUrl);
+    ws.onmessage = (e) => {
+      try { const d = JSON.parse(e.data); push(d.type, d.name); } catch (_) {}
+    };
+    ws.onclose = () => setTimeout(connect, 3000);
+  }
+  if (CONFIG.wsUrl) connect();
+
+  // ===== MODO DEMO: abrir o ficheiro com ?demo=1 =====
+  if (new URLSearchParams(location.search).has("demo")) {
+    const names = ["Ana", "Joao", "Mia", "Leo", "Bia"];
+    const types = Object.keys(TYPES);
+    setInterval(() => push(types[Math.floor(Math.random() * types.length)],
+                           names[Math.floor(Math.random() * names.length)]), 2500);
+  }
+</script>
+</body>
+</html>
